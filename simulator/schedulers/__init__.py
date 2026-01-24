@@ -1,4 +1,5 @@
 from simulator.schedulers.fsrs import FSRS6Scheduler, FSRS3Scheduler, FSRSScheduler
+from simulator.schedulers.fsrs6adr import FSRS6ADRScheduler
 from simulator.schedulers.hlr import HLRScheduler
 from simulator.schedulers.dash import DASHScheduler
 from simulator.schedulers.fixed import FixedIntervalScheduler
@@ -11,6 +12,7 @@ __all__ = [
     "FSRS6Scheduler",
     "FSRS3Scheduler",
     "FSRSScheduler",
+    "FSRS6ADRScheduler",
     "HLRScheduler",
     "DASHScheduler",
     "LSTMScheduler",

@@ -25,6 +25,7 @@ from simulator.models import FSRS3Model, FSRS6Model, LSTMModel
 from simulator.schedulers import (
     FSRS3Scheduler,
     FSRS6Scheduler,
+    FSRS6ADRScheduler,
     HLRScheduler,
     DASHScheduler,
     LSTMScheduler,
@@ -157,6 +158,9 @@ SCHEDULER_FACTORIES = {
     "sspmmc": lambda args: SSPMMCScheduler(
         policy_json=_require_policy(args.sspmmc_policy),
         fsrs_weights=None,
+    ),
+    "fsrs6-adr": lambda args: FSRS6ADRScheduler(
+        weights=_resolve_benchmark_weights(args, "fsrs6", expected_len=21),
     ),
 }
 
