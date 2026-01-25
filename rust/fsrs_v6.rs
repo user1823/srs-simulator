@@ -1,7 +1,4 @@
 type FSRSv6Params = [f32; 21];
-pub struct FSRSv6 {
-    w: FSRSv6Params,
-}
 pub struct FSRSv6State {
     pub s: f32,
     pub d: f32,
@@ -10,6 +7,52 @@ impl FSRSv6State {
     pub fn to_tuple(&self) -> (f32, f32) {
         (self.s, self.d)
     }
+}
+pub struct FSRSv6 {
+    w: FSRSv6Params,
+}
+
+// \int_a^b {interp(a, b, x) * (1+zx)^d dx} where interp(a, b, x) is a linear interpolation satisfying interp(a, b, a) = l and interp(a, b, b) = u for some l, u
+#[inline]
+pub fn linear_weighted_forgetting_curve_volume(
+    a: f32,
+    b: f32,
+    l: f32,
+    u: f32,
+    z: f32,
+    d: f32,
+) -> f32 {
+    // z == 0: (1 + z x)^d == 1
+    if z == 0.0 {
+        return 0.5 * (l + u) * (b - a);
+    }
+
+    // Generic case: z != 0, d != -1, -2
+    let A = 1.0 + z * a;
+    let B = 1.0 + z * b;
+
+    let d1 = d + 1.0;
+    let d2 = d + 2.0;
+
+    let A_d1 = A.powf(d1);
+    let B_d1 = B.powf(d1);
+    let A_d2 = A.powf(d2);
+    let B_d2 = B.powf(d2);
+
+    // ∫_a^b (1 + z x)^d dx
+    let i0 = (B_d1 - A_d1) / (z * d1);
+
+    // ∫_a^b (x - a)(1 + z x)^d dx
+    let i1 = (1.0 / (z * z))
+        * ((B_d2 - A_d2) / d2 - (B_d1 - A_d1) / d1)
+        - (a / (z * d1)) * (B_d1 - A_d1);
+
+    l * i0 + (u - l) / (b - a) * i1
+}
+
+#[inline]
+fn interp(a: f32, b: f32, l: f32, u: f32, x: f32) -> f32 {
+    l + (u - l) * (x - a) / (b - a)
 }
 
 impl FSRSv6 {
@@ -31,6 +74,22 @@ impl FSRSv6 {
         let decay = -self.w[20];
         let factor = 0.9_f32.powf(1.0 / decay) - 1.0;
         (1.0 + factor * elapsed / state.s).powf(decay)
+    }
+    pub fn schedule(&self, state: &FSRSv6State, dr: f32) -> (f32, f32) {
+        let interval = self.get_interval(state, dr).round();;
+        (interval, self.forgetting_curve(state, interval))
+    }
+    pub fn forgetting_curve_volume(&self, state: &FSRSv6State, endpoint: f32) -> f32 {
+        let decay = -self.w[20];
+        let factor = 0.9_f32.powf(1.0 / decay) - 1.0;
+        let a = factor / state.s;
+        let denom = a * (decay + 1.0);
+        ((1.0 + a * endpoint).powf(decay + 1.0) - 1.0) / denom
+    }
+    pub fn forgetting_curve_volume_weighted(&self, state: &FSRSv6State, a: f32, b: f32, l: f32, u: f32) -> f32 {
+        let decay = -self.w[20];
+        let factor = 0.9_f32.powf(1.0 / decay) - 1.0;
+        linear_weighted_forgetting_curve_volume(a, b, l, u, factor / state.s, decay)
     }
     fn stability_short_term(&self, s: f32, rating: i32) -> f32 {
         let sinc = (self.w[17] * (rating as f32 - 3.0 + self.w[18])).exp()
@@ -72,7 +131,7 @@ impl FSRSv6 {
         let new_d = self.mean_reversion(self.w[7], self.init_d(4), new_d);
         new_d.clamp(1.0, 10.0)
     }
-    pub fn transition(&self, state: FSRSv6State, rating: i32, elapsed: f32) -> FSRSv6State {
+    pub fn transition(&self, state: &FSRSv6State, rating: i32, elapsed: f32) -> FSRSv6State {
         let r = self.forgetting_curve(&state, elapsed);
         let s = if elapsed < 1.0 {
             self.stability_short_term(state.s, rating)
