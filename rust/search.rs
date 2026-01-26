@@ -124,9 +124,9 @@ fn simulate_review_card<T: Rng>(
         state = predictor.transition(&state, cont_rating_idx as i32 + 1, interval);
         l += 1;
     }
-    if start_weight > 100.0 {
-        println!("start {} end {} t = {} len = {}", start_weight, weight, start_t, l);
-    }
+    // if start_weight > 100.0 {
+    //     println!("start {} end {} t = {} len = {}", start_weight, weight, start_t, l);
+    // }
     accum_sim_result
 }
 
@@ -146,7 +146,7 @@ pub fn simulate<T: Rng>(
     for rating_idx in 0..4 {
         let rating = rating_idx as i32 + 1;
         let p = behavior_model.initial_rating_prob(rating_idx);
-        accum_sim_result.total_cost += weight * behavior_model.initial_cost(rating_idx);
+        accum_sim_result.total_cost += p * weight * behavior_model.initial_cost(rating_idx);
         let init_state = predictor.first_review(rating);
         let split_result = simulate_review_card(p * weight, 0.0, limit_t, end_t, init_state, &predictor, &behavior_model, rng);
         accum_sim_result.total_average_memorized += split_result.total_average_memorized;
