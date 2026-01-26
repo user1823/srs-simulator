@@ -177,9 +177,8 @@ pub fn simulated_annealing(
     let mut best_score = baseline_result.efficiency();
     let mut cur_adr = best_adr.clone();
     let mut cur_score = best_score;
-    // let temp_initial: f64 = 0.2;
-    let temp_initial: f64 = 0.5;
-    let temp_final: f64 = 0.001;
+    let temp_initial: f64 = 0.2;
+    let temp_final: f64 = 0.003;
     let mut fail_counter = 0;
     let initial_fail_counter_target = 4;
     let mut fail_counter_target = initial_fail_counter_target;

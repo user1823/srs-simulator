@@ -89,7 +89,7 @@ impl FSRSADRGenerator {
         let mut adr_clone = adr_model.clone();
         if choice < 10 {
             Self::adjust_flat(&mut adr_clone, rng);
-        } else if (choice < 20 || adr_model.gaussians.is_empty()) && adr_model.gaussians.len() < 64 {
+        } else if (choice < 20 || adr_model.gaussians.is_empty()) && adr_model.gaussians.len() < 8 {
             Self::add_gaussian(&mut adr_clone, rng);
         } else if choice <= 30 && !adr_model.gaussians.is_empty() {
             Self::delete_gaussian(&mut adr_clone, rng);
@@ -130,36 +130,54 @@ impl FSRSADRGenerator {
         let mut theta = gaussian.theta;
 
         match rng.random_range(0..6) {
-            0 => amplitude = amplitude + Self::gen_amplitude(rng),
-            1 => mu_s      = Self::gen_mu_s(rng),
-            2 => mu_d      = Self::gen_mu_d(rng),
-            3 => sigma_s   = Self::gen_sigma_s(rng),
-            4 => sigma_d   = Self::gen_sigma_d(rng),
-            5 => theta     = Self::gen_theta(rng),
+            0 => amplitude = Self::mod_amplitude(rng, amplitude),
+            1 => mu_s      = Self::mod_mu_s(rng, mu_s),
+            2 => mu_d      = Self::mod_mu_d(rng, mu_d),
+            3 => sigma_s   = Self::mod_sigma_s(rng, sigma_s),
+            4 => sigma_d   = Self::mod_sigma_d(rng, sigma_d),
+            5 => theta     = Self::mod_theta(rng, theta),
             _ => unreachable!(),
         }
+        // match rng.random_range(0..6) { 0 => amplitude = Self::mod_amplitude(rng, amplitude), 1 => mu_s = Self::gen_mu_s(rng), 2 => mu_d = Self::gen_mu_d(rng), 3 => sigma_s = Self::gen_sigma_s(rng), 4 => sigma_d = Self::gen_sigma_d(rng), 5 => theta = Self::gen_theta(rng), _ => unreachable!(), }
 
         // Construct the new Gaussian once
         *gaussian = Gaussian::new(amplitude, mu_s, mu_d, sigma_s, sigma_d, theta);
     }
-
     fn gen_amplitude<T: Rng>(rng: &mut T) -> f32 {
         rng.random_range(-0.2..0.2)
+    }
+    fn mod_amplitude<T: Rng>(rng: &mut T, x: f32) -> f32 {
+        (x + rng.random_range(-0.2..0.2)).clamp(-2.0, 2.0)
     }
     fn gen_mu_s<T: Rng>(rng: &mut T) -> f32 {
         rng.random_range(-7.0..10.0)
     }
+    fn mod_mu_s<T: Rng>(rng: &mut T, x: f32) -> f32 {
+        (x + rng.random_range(-1.0..1.0)).clamp(-8.0, 11.0)
+    }
     fn gen_mu_d<T: Rng>(rng: &mut T) -> f32 {
-        rng.random_range(-0.0..11.0)
+        rng.random_range(0.0..11.0)
+    }
+    fn mod_mu_d<T: Rng>(rng: &mut T, x: f32) -> f32 {
+        (x + rng.random_range(-1.0..1.0)).clamp(-1.0, 12.0)
     }
     fn gen_sigma_s<T: Rng>(rng: &mut T) -> f32 {
-        rng.random_range(-0.5..3.0f32).exp()
+        rng.random_range(-0.5f32..3.0).exp()
+    }
+    fn mod_sigma_s<T: Rng>(rng: &mut T, x: f32) -> f32 {
+        (x.ln() + rng.random_range(-0.2..0.2)).exp()
     }
     fn gen_sigma_d<T: Rng>(rng: &mut T) -> f32 {
-        rng.random_range(-0.5..3.0f32).exp()
+        rng.random_range(-0.5f32..3.0).exp()
+    }
+    fn mod_sigma_d<T: Rng>(rng: &mut T, x: f32) -> f32 {
+        (x.ln() + rng.random_range(-0.2..0.2)).exp()
     }
     fn gen_theta<T: Rng>(rng: &mut T) -> f32 {
         rng.random_range(0.0..TAU)
+    }
+    fn mod_theta<T: Rng>(rng: &mut T, x: f32) -> f32 {
+        (x + rng.random_range(-0.5..0.5)).rem_euclid(TAU)
     }
     pub fn record_score(&self, score: f64) -> () {
 
