@@ -1,12 +1,18 @@
 use rand::Rng;
 
-use crate::{behavior_model::BehaviorModel, fsrs_v6::{FSRSv6, FSRSv6State}};
+use crate::{behavior_model::BehaviorModel, fsrs_adr::FSRSADRGenerator, fsrs_v6::{FSRSv6, FSRSv6State}};
+use crate::{fsrs_adr::FSRSADR};
 extern crate rand;
 
 #[derive(Debug)]
 pub struct SimResult {
-    pub total_average_memorized: f32,
-    pub total_cost: f32,
+    pub total_average_memorized: f64,
+    pub total_cost: f64,
+}
+impl SimResult {
+    fn efficiency(&self) -> f64 {
+        self.total_average_memorized / self.total_cost
+    }
 }
 
 fn get_proportion(t: f32, limit_t: f32, end_t: f32) -> f32 {
@@ -26,6 +32,7 @@ fn simulate_review_card<T: Rng>(
     end_t: f32,
     start_state: FSRSv6State,
     predictor: &FSRSv6,
+    adr_model: &FSRSADR,
     behavior_model: &BehaviorModel,
     rng: &mut T,
 ) -> SimResult {
@@ -36,15 +43,13 @@ fn simulate_review_card<T: Rng>(
     let mut split = weight > 1.0;
     let mut l = 0;
     loop {
-        let dr = 0.9;
+        let dr = adr_model.get_dr(state.s, state.d);
         let (interval, r) = predictor.schedule(&state, dr);
         let review_day = f32::min(t + interval, end_t);
         let time_existing_in_memory = review_day - t;
         let review_day_proportion = get_proportion(review_day, limit_t, end_t);
         // total memorized is the same between all rating options
         accum_sim_result.total_average_memorized += {
-            // let time_existing_in_memory = f32::min(review_day, end_t) - t;
-            // weight * predictor.forgetting_curve_volume(&state, time_existing_in_memory)
             if t < limit_t && limit_t < review_day {
                 let volume = 
                     predictor.forgetting_curve_volume(&state, limit_t - t)
@@ -67,7 +72,7 @@ fn simulate_review_card<T: Rng>(
                     review_day_proportion,
                 )
             }
-        };
+        } as f64;
 
         if review_day >= end_t {
             break
@@ -98,7 +103,7 @@ fn simulate_review_card<T: Rng>(
                 let rating_idx = i as usize;
                 let rating: i32 = i + 1;
                 let next_weight = weight * probs[rating_idx];
-                accum_sim_result.total_cost += next_weight * review_day_proportion * behavior_model.review_cost(rating_idx);
+                accum_sim_result.total_cost += (next_weight * review_day_proportion * behavior_model.review_cost(rating_idx)) as f64;
 
                 let split_result = simulate_review_card(
                     next_weight,
@@ -107,6 +112,7 @@ fn simulate_review_card<T: Rng>(
                     end_t,
                     predictor.transition(&state, rating, interval),
                     &predictor,
+                    &adr_model,
                     &behavior_model,
                     rng,
                 );
@@ -116,7 +122,7 @@ fn simulate_review_card<T: Rng>(
         }
 
         let next_weight = weight * cont_prob;
-        accum_sim_result.total_cost += weight * review_day_proportion * cont_prob * behavior_model.review_cost(cont_rating_idx);
+        accum_sim_result.total_cost += (weight * review_day_proportion * cont_prob * behavior_model.review_cost(cont_rating_idx)) as f64;
 
         // Prepare state for the next iteration
         weight = next_weight;
@@ -136,19 +142,19 @@ pub fn simulate<T: Rng>(
     new_cards_per_day: i32,
     end_t: f32,
     predictor: &FSRSv6,
+    adr_model: &FSRSADR,
     behavior_model: &BehaviorModel,
     rng: &mut T,
 ) -> SimResult {
     let learn_days = deck_size as f32 / new_cards_per_day as f32;
     let limit_t = f32::max(0.0, end_t - learn_days);
     let mut accum_sim_result = SimResult { total_average_memorized: 0.0, total_cost: 0.0 };
-    println!("limit {} {}", limit_t, end_t);
     for rating_idx in 0..4 {
         let rating = rating_idx as i32 + 1;
         let p = behavior_model.initial_rating_prob(rating_idx);
-        accum_sim_result.total_cost += p * weight * behavior_model.initial_cost(rating_idx);
+        accum_sim_result.total_cost += (p * weight * behavior_model.initial_cost(rating_idx)) as f64;
         let init_state = predictor.first_review(rating);
-        let split_result = simulate_review_card(p * weight, 0.0, limit_t, end_t, init_state, &predictor, &behavior_model, rng);
+        let split_result = simulate_review_card(p * weight, 0.0, limit_t, end_t, init_state, &predictor, &adr_model, &behavior_model, rng);
         accum_sim_result.total_average_memorized += split_result.total_average_memorized;
         accum_sim_result.total_cost += split_result.total_cost;
     }
@@ -156,9 +162,56 @@ pub fn simulate<T: Rng>(
 }
 
 pub fn simulated_annealing(
+    dr_equivalent: f32,
+    deck_size: i32,
     new_cards_per_day: i32,
+    days: i32,
     predictor: &FSRSv6,
     behavior_model: &BehaviorModel,
-) {
+) -> FSRSADR {
+    let generator = FSRSADRGenerator {};
+    let mut rng = rand::rng();
+    let mut best_adr = FSRSADR::fixed_dr(dr_equivalent);
+    let baseline_result = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
+    let baseline_memorized = baseline_result.total_average_memorized;
+    let mut best_score = baseline_result.efficiency();
+    let mut cur_adr = best_adr.clone();
+    let mut cur_score = best_score;
+    let temp_initial: f64 = 1.0;
+    let temp_final: f64 = 0.01;
 
+    let n_iterations = 3000;
+    for it in 0..n_iterations {
+        let sample = generator.suggest(&cur_adr, &mut rng);
+        let result = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &sample, &behavior_model, &mut rng);
+        if result.total_average_memorized < baseline_memorized {
+            continue
+        } 
+        println!("it: {}, memorized: {:2}, eff: {:2}", it, result.total_average_memorized, result.efficiency());
+        let score = result.efficiency();
+        let choice: f64 = rng.random();
+        let temp = temp_initial * (temp_final / temp_initial).powf(it as f64 / n_iterations as f64);
+        if score > best_score {
+            println!("---- Global Best ----");
+            best_score = score;
+            best_adr = sample.clone();
+            println!("Model = {:?}", best_adr);
+            cur_score = score;
+            cur_adr = sample;
+        } else if score > cur_score {
+            println!("Local best.");
+            cur_score = score;
+            cur_adr = sample;
+        } else if choice < ((score - cur_score) / temp).exp() {
+            println!("Temp transition {} {} {}", score, cur_score, temp);
+            cur_score = score;
+            cur_adr = sample;
+        }
+    }
+    println!("Initial score: {}, Final score: {}", baseline_result.efficiency(), best_score);
+    let verify = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
+    println!("Best score repeated: {}", verify.efficiency());
+    println!("Best adr: {:?}", best_adr);
+    println!("Cur adr: {:?}", cur_adr);
+    best_adr
 }

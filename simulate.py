@@ -162,6 +162,7 @@ SCHEDULER_FACTORIES = {
     "fsrs6-adr": lambda args: FSRS6ADRScheduler(
         weights=_resolve_benchmark_weights(args, "fsrs6", expected_len=21),
         dr_equivalent=args.desired_retention,
+        days=args.days,
         deck_size = args.deck,
         new_cards_per_day=args.learn_limit,
         initial_rating_prob=[0.24, 0.094, 0.495, 0.171], 
@@ -856,6 +857,9 @@ def _write_log(args: argparse.Namespace, stats) -> None:
             else 0.0
         )
         totals = {
+            "sum_memorized": round(sum(stats.daily_memorized), 2),
+            "sum_cost": round(sum(stats.daily_cost), 2),
+            "eff": round(sum(stats.daily_memorized) / sum(stats.daily_cost), 2),
             "avg_accum_memorized_per_hour": avg_accum_memorized_per_hour,
             "memorized_average": round(memorized_average),
             "reviews_average": round(reviews_average, 2),

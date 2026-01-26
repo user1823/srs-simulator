@@ -13,8 +13,8 @@ if TYPE_CHECKING:
 
 class FSRS6ADRScheduler(Scheduler):
 
-    def __init__(self, weights: Sequence[float], dr_equivalent, deck_size, new_cards_per_day, initial_rating_prob, initial_cost, review_rating_prob_given_success, review_cost) -> None:
-        self.lib = srs_simulator_rs.Lib(weights, dr_equivalent, max(1, deck_size), max(1, new_cards_per_day), initial_rating_prob, initial_cost, review_rating_prob_given_success, review_cost)
+    def __init__(self, weights: Sequence[float], dr_equivalent, days, deck_size, new_cards_per_day, initial_rating_prob, initial_cost, review_rating_prob_given_success, review_cost) -> None:
+        self.lib = srs_simulator_rs.Lib(weights, 0.7, days, max(1, deck_size), max(1, new_cards_per_day), initial_rating_prob, initial_cost, review_rating_prob_given_success, review_cost)
         self.truth = FSRS6Scheduler(weights)
         exit()
         pass
