@@ -22,6 +22,8 @@ impl Lib {
     fn new(
         weights_vec: Vec<f32>,
         dr_equivalent: f32,
+        deck_size: i32,
+        new_cards_per_day: i32,
         initial_rating_prob_vec: Vec<f32>,
         initial_cost_vec: Vec<f32>,
         review_rating_prob_given_success_vec: Vec<f32>,
@@ -30,6 +32,8 @@ impl Lib {
         println!("Rust received:");
         println!("FSRS weights = {:?}", weights_vec);
         println!("DR = {:?}", dr_equivalent);
+        println!("Deck size = {:?}", deck_size);
+        println!("New per day = {:?}", new_cards_per_day);
         println!("initial_rating_prob_vec = {:?}", initial_rating_prob_vec);
         println!("initial_cost_vec = {:?}", initial_cost_vec);
         println!(
@@ -60,11 +64,10 @@ impl Lib {
         let behavior_model = BehaviorModel::new(initial_rating_prob, initial_cost, review_rating_prob_given_success, review_cost);
         let mut rng = rand::rng();
         let start = Instant::now();
-        FSRSv6::test();
-        // for i in 0..1 {
-        //     let sim_result = simulate(10000.0, 3650.0, &predictor, &behavior_model, &mut rng);
-        //     println!("sim result = {:?}", sim_result);
-        // }
+        for i in 0..1 {
+            let sim_result = simulate(10000.0, deck_size, new_cards_per_day, 3650.0, &predictor, &behavior_model, &mut rng);
+            println!("sim result = {:?}", sim_result);
+        }
         let elapsed = start.elapsed();
         println!("Time elapsed: {:.3?}", elapsed); // e.g., 0.500s
         Ok(Lib { fsrs: predictor })

@@ -23,9 +23,9 @@ pub fn linear_weighted_forgetting_curve_volume(
     d: f32,
 ) -> f32 {
     // z == 0: (1 + z x)^d == 1
-    if z == 0.0 {
-        return 0.5 * (l + u) * (b - a);
-    }
+    // if z == 0.0 {
+    //     return 0.5 * (l + u) * (b - a);
+    // }
 
     // Generic case: z != 0, d != -1, -2
     let A = 1.0 + z * a;

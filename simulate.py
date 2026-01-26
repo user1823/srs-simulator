@@ -162,6 +162,8 @@ SCHEDULER_FACTORIES = {
     "fsrs6-adr": lambda args: FSRS6ADRScheduler(
         weights=_resolve_benchmark_weights(args, "fsrs6", expected_len=21),
         dr_equivalent=args.desired_retention,
+        deck_size = args.deck,
+        new_cards_per_day=args.learn_limit,
         initial_rating_prob=[0.24, 0.094, 0.495, 0.171], 
         initial_cost=[33.79, 24.3, 13.68, 6.5], 
         review_rating_prob_given_success=[0.224, 0.631, 0.145], 
