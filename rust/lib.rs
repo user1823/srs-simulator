@@ -15,6 +15,7 @@ use fsrs_adr::*;
 #[pyclass]
 struct Lib {
     fsrs: FSRSv6,
+    adr_model: FSRSADR,
 }
 
 
@@ -66,9 +67,8 @@ impl Lib {
         );
         let predictor = FSRSv6::new(weights);
         let behavior_model = BehaviorModel::new(initial_rating_prob, initial_cost, review_rating_prob_given_success, review_cost);
-        let mut rng = rand::rng();
         let start = Instant::now();
-        simulated_annealing(dr_equivalent, deck_size, new_cards_per_day, days, &predictor, &behavior_model);
+        let adr_model = simulated_annealing(dr_equivalent, deck_size, new_cards_per_day, days, &predictor, &behavior_model);
         // for i in 0..1 {
         //     // let sim_result = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &behavior_model, &mut rng);
         //     let ratio = sim_result.total_average_memorized as f32 / sim_result.total_cost as f32;
@@ -76,7 +76,7 @@ impl Lib {
         // }
         let elapsed = start.elapsed();
         println!("Time elapsed: {:.3?}", elapsed); // e.g., 0.500s
-        Ok(Lib { fsrs: predictor })
+        Ok(Lib { fsrs: predictor, adr_model: adr_model })
     }
     fn hello(&self) -> PyResult<String> {
         println!("hello world");

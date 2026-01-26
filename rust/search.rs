@@ -177,40 +177,65 @@ pub fn simulated_annealing(
     let mut best_score = baseline_result.efficiency();
     let mut cur_adr = best_adr.clone();
     let mut cur_score = best_score;
-    let temp_initial: f64 = 1.0;
-    let temp_final: f64 = 0.01;
-
+    // let temp_initial: f64 = 0.2;
+    let temp_initial: f64 = 0.5;
+    let temp_final: f64 = 0.001;
+    let mut fail_counter = 0;
+    let initial_fail_counter_target = 4;
+    let mut fail_counter_target = initial_fail_counter_target;
     let n_iterations = 3000;
     for it in 0..n_iterations {
         let sample = generator.suggest(&cur_adr, &mut rng);
-        let result = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &sample, &behavior_model, &mut rng);
+        let temp_choice: f64 = rng.random();
+        let mut eval = |model: &FSRSADR| -> SimResult {
+            simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &model, &behavior_model, &mut rng)
+        };
+
+        // let result = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &sample, &behavior_model, &mut rng);
+        let result = eval(&sample);
         if result.total_average_memorized < baseline_memorized {
             continue
         } 
-        println!("it: {}, memorized: {:2}, eff: {:2}", it, result.total_average_memorized, result.efficiency());
+        println!("it: {}, memorized: {:.3}, eff: {:.3}", it, result.total_average_memorized, result.efficiency());
         let score = result.efficiency();
-        let choice: f64 = rng.random();
         let temp = temp_initial * (temp_final / temp_initial).powf(it as f64 / n_iterations as f64);
         if score > best_score {
-            println!("---- Global Best ----");
-            best_score = score;
-            best_adr = sample.clone();
-            println!("Model = {:?}", best_adr);
-            cur_score = score;
-            cur_adr = sample;
-        } else if score > cur_score {
+            let verify_score = eval(&sample).efficiency();
+            if verify_score > best_score {
+                println!("---- Global Best ---- first: {:.3} second: {:.3}", score, verify_score);
+                best_score = verify_score;
+                best_adr = sample.clone();
+                println!("Model = {:?}", best_adr);
+            }
+        }
+        if score > cur_score {
             println!("Local best.");
             cur_score = score;
             cur_adr = sample;
-        } else if choice < ((score - cur_score) / temp).exp() {
+            fail_counter = 0;
+            fail_counter_target = initial_fail_counter_target;
+        } else if temp_choice < ((score - cur_score) / temp).exp() {
             println!("Temp transition {} {} {}", score, cur_score, temp);
             cur_score = score;
             cur_adr = sample;
+            fail_counter = 0;
+            fail_counter_target = initial_fail_counter_target;
+        } else {
+            println!("Do nothing.");
+            fail_counter += 1;
+            if fail_counter == fail_counter_target {
+                let prev_score = cur_score;
+                cur_score = eval(&cur_adr).efficiency();
+                fail_counter = 0;
+                fail_counter_target = 2 * fail_counter_target;
+                println!("Rerolling... {:.3} -> {:.3}", prev_score, cur_score);
+            }
         }
     }
     println!("Initial score: {}, Final score: {}", baseline_result.efficiency(), best_score);
+    // let verify = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
     let verify = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
-    println!("Best score repeated: {}", verify.efficiency());
+    println!("Best score repeated: {:.3}", verify.efficiency());
     println!("Best adr: {:?}", best_adr);
     println!("Cur adr: {:?}", cur_adr);
     best_adr
