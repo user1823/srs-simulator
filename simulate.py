@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import csv
-import math
 import json
+import math
 import random
 import sys
 import time
@@ -14,31 +14,18 @@ from matplotlib.lines import Line2D
 
 from simulator import simulate
 from simulator.behavior import StochasticBehavior
+from simulator.benchmark_loader import load_benchmark_weights, parse_result_overrides
 from simulator.button_usage import (
     DEFAULT_BUTTON_USAGE_PATH,
     load_button_usage_config,
     normalize_button_usage,
 )
-from simulator.cost import StatefulCostModel, StateRatingCosts
-from simulator.benchmark_loader import load_benchmark_weights, parse_result_overrides
-from simulator.models import FSRS3Model, FSRS6Model, LSTMModel
-from simulator.schedulers import (
-    FSRS3Scheduler,
-    FSRS6Scheduler,
-    FSRS6ADRScheduler,
-    HLRScheduler,
-    DASHScheduler,
-    LSTMScheduler,
-    FixedIntervalScheduler,
-    AnkiSM2Scheduler,
-    MemriseScheduler,
-    SSPMMCScheduler,
-)
 from simulator.core import Action, Event, new_first_priority, review_first_priority
+from simulator.cost import StatefulCostModel, StateRatingCosts
 from simulator.defaults import (
     DEFAULT_COST_LIMIT_MINUTES,
-    DEFAULT_DECK_SIZE,
     DEFAULT_DAYS,
+    DEFAULT_DECK_SIZE,
     DEFAULT_LEARN_LIMIT,
     DEFAULT_PRIORITY,
     DEFAULT_REVIEW_LIMIT,
@@ -46,18 +33,33 @@ from simulator.defaults import (
     DEFAULT_SEED,
     DEFAULT_SHORT_TERM_LOOPS_LIMIT,
 )
+from simulator.models import FSRS3Model, FSRS6Model, LSTMModel
 from simulator.scheduler_spec import (
     format_float,
     normalize_fixed_interval,
     parse_scheduler_spec,
     scheduler_uses_desired_retention,
 )
-from simulator.vectorized import simulate as simulate_vectorized
+from simulator.schedulers import (
+    AnkiSM2Scheduler,
+    DASHScheduler,
+    FixedIntervalScheduler,
+    FSRS3Scheduler,
+    FSRS6ADRScheduler,
+    FSRS6Scheduler,
+    HLRScheduler,
+    LSTMScheduler,
+    MemriseScheduler,
+    SSPMMCScheduler,
+)
 from simulator.short_term import ShortTermScheduler
 from simulator.short_term_config import (
     parse_steps as _parse_steps,
+)
+from simulator.short_term_config import (
     resolve_short_term_config as _resolve_short_term_config,
 )
+from simulator.vectorized import simulate as simulate_vectorized
 
 
 def _resolve_benchmark_weights(
@@ -163,12 +165,12 @@ SCHEDULER_FACTORIES = {
         weights=_resolve_benchmark_weights(args, "fsrs6", expected_len=21),
         dr_equivalent=args.desired_retention,
         days=args.days,
-        deck_size = args.deck,
+        deck_size=args.deck,
         new_cards_per_day=args.learn_limit,
-        initial_rating_prob=[0.24, 0.094, 0.495, 0.171], 
-        initial_cost=[33.79, 24.3, 13.68, 6.5], 
-        review_rating_prob_given_success=[0.224, 0.631, 0.145], 
-        review_cost=[23.0, 11.68, 7.33, 5.6],
+        initial_rating_prob=args.usage["first_rating_prob"],
+        initial_cost=args.usage["learn_costs"],
+        review_rating_prob_given_success=args.usage["review_rating_prob"],
+        review_cost=args.usage["review_costs"],
     ),
 }
 
@@ -448,6 +450,9 @@ def main() -> None:
                 relearning=usage["review_costs"],
             )
         )
+    args.usage = usage
+    env = ENVIRONMENT_FACTORIES[args.environment](args)
+    agent = SCHEDULER_FACTORIES[args.scheduler](args)
     start_time = time.perf_counter()
     if args.engine == "vectorized":
         if args.log_reviews:

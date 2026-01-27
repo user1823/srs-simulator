@@ -1,8 +1,107 @@
 use std::f32::consts::TAU;
 
+use arrayvec::ArrayVec;
 use rand::Rng;
 
-use crate::fsrs_v6::FSRSv6State;
+#[derive(Copy, Clone, Debug)]
+struct DecisionPlane {
+    mu_s: f32,
+    mu_d: f32,
+    dir_s: f32,
+    dir_d: f32,
+}
+impl DecisionPlane {
+    fn new(mu_s: f32, mu_d: f32, theta: f32) -> Self {
+        let (sin_t, cos_t) = theta.sin_cos();
+        Self {
+            mu_s,
+            mu_d,
+            dir_s: cos_t,
+            dir_d: sin_t,
+        }
+    }
+    fn empty() -> Self {
+        Self::new(0.0, 0.0, 0.0)
+    }
+    #[inline]
+    fn prop(&self, s: f32, d: f32) -> bool {
+        let dot_prod = (s - self.mu_s) * self.dir_s + (d - self.mu_d) * self.dir_d;
+        return dot_prod > 0.0
+    }
+    fn gen<T: Rng>(rng: &mut T) -> Self {
+        let mu_s = rng.random_range(-7.0..10.0);
+        let mu_d = rng.random_range(1.0..10.0);
+        let theta = rng.random_range(0.0..TAU);
+        Self::new(mu_s, mu_d, theta)
+    }
+    fn mutate<T: Rng>(&mut self, rng: &mut T) {
+        match rng.random_range(0..3) {
+            0 => self.mu_s = (self.mu_s + rng.random_range(-1.0..1.0)).clamp(-12.0, 15.0),
+            1 => self.mu_d = (self.mu_d + rng.random_range(-1.0..1.0)).clamp(-5.0, 15.0),
+            2 => {
+                let angle: f32 = rng.random_range(-0.5..0.5);
+                let (s, c) = angle.sin_cos();
+
+                let new_s = self.dir_s * c - self.dir_d * s;
+                let new_d = self.dir_s * s + self.dir_d * c;
+
+                self.dir_s = new_s;
+                self.dir_d = new_d;
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct RegionBonus {
+    bonus: f32,
+    decision_planes: ArrayVec<DecisionPlane, 3>
+}
+
+impl RegionBonus {
+    #[inline]
+    fn eval(&self, s: f32, d: f32) -> f32 {
+        if self.decision_planes.iter().all(|x| x.prop(s, d)) {
+            self.bonus
+        } else {
+            0.0
+        }
+    }
+    fn gen<T: Rng>(rng: &mut T) -> Self {
+        let bonus = rng.random_range(-0.2..0.2);
+        let n_planes = rng.random_range(1..=3);
+        let mut decision_planes = ArrayVec::new();
+        for _ in 0..n_planes {
+            decision_planes.push(DecisionPlane::gen(rng));
+        }
+        Self {
+            bonus,
+            decision_planes,
+        }
+    }
+    fn mutate<T: Rng>(&mut self, rng: &mut T) {
+        let r = rng.random_range(1..100);
+
+        if r < 30 {
+            self.bonus = (self.bonus + rng.random_range(-0.2..0.2)).clamp(-3.0, 3.0);
+        } else if r < 70 {
+            let i = rng.random_range(0..self.decision_planes.len());
+            self.decision_planes[i].mutate(rng);
+        } else {
+            if rng.random_bool(0.5) {
+                if self.decision_planes.len() < self.decision_planes.capacity() {
+                    self.decision_planes.push(DecisionPlane::gen(rng));
+                }
+            } else {
+                if self.decision_planes.len() > 1 {
+                    let i = rng.random_range(0..self.decision_planes.len());
+                    self.decision_planes.swap_remove(i);
+                }
+            }
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug)]
 pub struct Gaussian {
@@ -34,10 +133,12 @@ impl Gaussian {
             cos_t,
         }
     }
-
+    fn empty() -> Self {
+        Self::new(0.0, 0.0, 0.0, 1.0, 1.0, 0.0)
+    }
     #[inline]
     fn eval(&self, s: f32, d: f32) -> f32 {
-        let ds = s - self.mu_s;
+        let ds: f32 = s - self.mu_s;
         let dd = d - self.mu_d;
         let x =  self.cos_t * ds + self.sin_t * dd;
         let y = -self.sin_t * ds + self.cos_t * dd;
@@ -49,21 +150,23 @@ impl Gaussian {
 #[derive(Clone, Debug)]
 pub struct FSRSADR {
     flat: f32,
-    gaussians: Vec<Gaussian>,
+    gaussians: ArrayVec<Gaussian, 8>,
+    decision_bonuses: ArrayVec<RegionBonus, 8>,
 }
 impl FSRSADR {
     pub fn new(dr: f32) -> Self {
-        Self { flat: inverse_sigmoid(dr), gaussians: Vec::new() }
+        Self::fixed_dr(dr)
     }
     pub fn fixed_dr(dr: f32) -> Self {
-        Self { flat: inverse_sigmoid(dr), gaussians: Vec::new() }
+        Self { flat: inverse_sigmoid(dr), gaussians: ArrayVec::new(), decision_bonuses: ArrayVec::new() }
     }
     pub fn get_dr(&self, s: f32, d: f32) -> f32 {
         let s = s.ln();
         let logit = 
             self.flat 
-            + self.gaussians.iter().map(|g| g.eval(s, d)).sum::<f32>();
-        sigmoid(logit).clamp(0.0, 0.99)
+            + self.gaussians.iter().map(|g| g.eval(s, d)).sum::<f32>()
+            + self.decision_bonuses.iter().map(|g| g.eval(s, d)).sum::<f32>();
+        sigmoid(logit).clamp(0.0, 0.995)
     }
 }
 
@@ -80,18 +183,25 @@ fn inverse_sigmoid(x: f32) -> f32 {
 }
 
 pub struct FSRSADRGenerator {
-
+    init: bool
 }
 
 impl FSRSADRGenerator {
-    pub fn suggest<T: Rng>(&self, adr_model: &FSRSADR, rng: &mut T) -> FSRSADR {
-        let choice: u32 = rng.random_range(0..100);
+    pub fn new() -> Self {
+        Self { init: false }
+    }
+    pub fn suggest<T: Rng>(&mut self, adr_model: &FSRSADR, rng: &mut T) -> FSRSADR {
         let mut adr_clone = adr_model.clone();
-        if choice < 10 {
+        let choice: u32 = rng.random_range(0..100);
+        if adr_clone.decision_bonuses.is_empty() || (choice < 20 && adr_model.decision_bonuses.len() < adr_model.decision_bonuses.capacity()) {
+            Self::add_decision_bonus(&mut adr_clone, rng);
+        } else if choice < 400 {
+            Self::adjust_decision_bonus(&mut adr_clone, rng);
+        } else if choice < 50 {
             Self::adjust_flat(&mut adr_clone, rng);
-        } else if (choice < 20 || adr_model.gaussians.is_empty()) && adr_model.gaussians.len() < 8 {
+        } else if (choice < 60 || adr_model.gaussians.is_empty()) && adr_model.gaussians.len() < adr_model.gaussians.capacity() {
             Self::add_gaussian(&mut adr_clone, rng);
-        } else if choice <= 30 && !adr_model.gaussians.is_empty() {
+        } else if choice <= 70 && !adr_model.gaussians.is_empty() {
             Self::delete_gaussian(&mut adr_clone, rng);
         } else {
             Self::adjust_gaussian(&mut adr_clone, rng);
@@ -104,19 +214,21 @@ impl FSRSADRGenerator {
         adr_model.flat = f32::min(adr_model.flat, inverse_sigmoid(0.99));
     }
     fn add_gaussian<T: Rng>(adr_model: &mut FSRSADR, rng: &mut T) -> () {
-        let gaussian = Gaussian::new(
+        adr_model.gaussians.push(Self::gen_gaussian(rng));
+    }
+    fn delete_gaussian<T: Rng>(adr_model: &mut FSRSADR, rng: &mut T) -> () {
+        let idx = rng.random_range(0..adr_model.gaussians.len());
+        adr_model.gaussians.swap_remove(idx);
+    }
+    fn gen_gaussian<T: Rng>(rng: &mut T) -> Gaussian {
+        Gaussian::new(
             Self::gen_amplitude(rng),
             Self::gen_mu_s(rng),
             Self::gen_mu_d(rng),
             Self::gen_sigma_s(rng),
             Self::gen_sigma_d(rng),
             Self::gen_theta(rng),
-        );
-        adr_model.gaussians.push(gaussian);
-    }
-    fn delete_gaussian<T: Rng>(adr_model: &mut FSRSADR, rng: &mut T) -> () {
-        let idx = rng.random_range(0..adr_model.gaussians.len());
-        adr_model.gaussians.remove(idx);
+        )
     }
     fn adjust_gaussian<T: Rng>(adr_model: &mut FSRSADR, rng: &mut T) {
         let rand_index = rng.random_range(0..adr_model.gaussians.len());
@@ -138,9 +250,7 @@ impl FSRSADRGenerator {
             5 => theta     = Self::mod_theta(rng, theta),
             _ => unreachable!(),
         }
-        // match rng.random_range(0..6) { 0 => amplitude = Self::mod_amplitude(rng, amplitude), 1 => mu_s = Self::gen_mu_s(rng), 2 => mu_d = Self::gen_mu_d(rng), 3 => sigma_s = Self::gen_sigma_s(rng), 4 => sigma_d = Self::gen_sigma_d(rng), 5 => theta = Self::gen_theta(rng), _ => unreachable!(), }
 
-        // Construct the new Gaussian once
         *gaussian = Gaussian::new(amplitude, mu_s, mu_d, sigma_s, sigma_d, theta);
     }
     fn gen_amplitude<T: Rng>(rng: &mut T) -> f32 {
@@ -178,6 +288,14 @@ impl FSRSADRGenerator {
     }
     fn mod_theta<T: Rng>(rng: &mut T, x: f32) -> f32 {
         (x + rng.random_range(-0.5..0.5)).rem_euclid(TAU)
+    }
+    fn add_decision_bonus<T: Rng>(adr_model: &mut FSRSADR, rng: &mut T) -> () {
+        adr_model.decision_bonuses.push(RegionBonus::gen(rng));
+    }
+    fn adjust_decision_bonus<T: Rng>(adr_model: &mut FSRSADR, rng: &mut T) {
+        let rand_index = rng.random_range(0..adr_model.decision_bonuses.len());
+        let decision_bonus = unsafe { adr_model.decision_bonuses.get_unchecked_mut(rand_index) };
+        decision_bonus.mutate(rng);
     }
     pub fn record_score(&self, score: f64) -> () {
 

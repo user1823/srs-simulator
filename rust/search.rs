@@ -130,9 +130,9 @@ fn simulate_review_card<T: Rng>(
         state = predictor.transition(&state, cont_rating_idx as i32 + 1, interval);
         l += 1;
     }
-    // if start_weight > 100.0 {
-    //     println!("start {} end {} t = {} len = {}", start_weight, weight, start_t, l);
-    // }
+    if l > 1000 {
+        println!("start {} end {} t = {} len = {}", start_weight, weight, start_t, l);
+    }
     accum_sim_result
 }
 
@@ -169,7 +169,7 @@ pub fn simulated_annealing(
     predictor: &FSRSv6,
     behavior_model: &BehaviorModel,
 ) -> FSRSADR {
-    let generator = FSRSADRGenerator {};
+    let mut generator = FSRSADRGenerator::new();
     let mut rng = rand::rng();
     let mut best_adr = FSRSADR::fixed_dr(dr_equivalent);
     let baseline_result = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
@@ -182,7 +182,8 @@ pub fn simulated_annealing(
     let mut fail_counter = 0;
     let initial_fail_counter_target = 4;
     let mut fail_counter_target = initial_fail_counter_target;
-    let n_iterations = 3000;
+    return best_adr;
+    let n_iterations = 20;
     for it in 0..n_iterations {
         let sample = generator.suggest(&cur_adr, &mut rng);
         let temp_choice: f64 = rng.random();
@@ -199,8 +200,9 @@ pub fn simulated_annealing(
         let score = result.efficiency();
         let temp = temp_initial * (temp_final / temp_initial).powf(it as f64 / n_iterations as f64);
         if score > best_score {
-            let verify_score = eval(&sample).efficiency();
-            if verify_score > best_score {
+            let verify_result = eval(&sample);
+            let verify_score = verify_result.efficiency();
+            if verify_result.total_average_memorized > baseline_memorized && verify_score > best_score {
                 println!("---- Global Best ---- first: {:.3} second: {:.3}", score, verify_score);
                 best_score = verify_score;
                 best_adr = sample.clone();
@@ -214,7 +216,7 @@ pub fn simulated_annealing(
             fail_counter = 0;
             fail_counter_target = initial_fail_counter_target;
         } else if temp_choice < ((score - cur_score) / temp).exp() {
-            println!("Temp transition {} {} {}", score, cur_score, temp);
+            println!("Temp transition {:.3} {:.3} {:.3}", score, cur_score, temp);
             cur_score = score;
             cur_adr = sample;
             fail_counter = 0;

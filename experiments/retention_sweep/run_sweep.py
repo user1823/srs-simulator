@@ -2,29 +2,18 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import random
 import sys
 import time
+from pathlib import Path
 from typing import Callable, List
+
 from tqdm import tqdm
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from simulator.subprocess_progress import encode_progress_event
-from simulator.scheduler_spec import (
-    format_float,
-    normalize_fixed_interval,
-    parse_scheduler_spec,
-    scheduler_uses_desired_retention,
-)
-from simulator.retention_sweep.grid import dr_values as grid_dr_values
-from simulator.retention_sweep.sspmmc import (
-    resolve_sspmmc_policy_paths as resolve_sspmmc_policy_paths,
-)
-from simulator.button_usage import DEFAULT_BUTTON_USAGE_PATH
 from experiments.retention_sweep.cli_utils import (
     add_benchmark_args,
     add_button_usage_arg,
@@ -37,6 +26,18 @@ from experiments.retention_sweep.cli_utils import (
     add_torch_device_arg,
     parse_csv,
 )
+from simulator.button_usage import DEFAULT_BUTTON_USAGE_PATH
+from simulator.retention_sweep.grid import dr_values as grid_dr_values
+from simulator.retention_sweep.sspmmc import (
+    resolve_sspmmc_policy_paths as resolve_sspmmc_policy_paths,
+)
+from simulator.scheduler_spec import (
+    format_float,
+    normalize_fixed_interval,
+    parse_scheduler_spec,
+    scheduler_uses_desired_retention,
+)
+from simulator.subprocess_progress import encode_progress_event
 
 
 def parse_args() -> argparse.Namespace:
@@ -311,6 +312,9 @@ def _run_once(
         else None
     )
     usage = normalize_button_usage(button_usage)
+    run_args.usage = usage
+    env = simulate_cli.ENVIRONMENT_FACTORIES[run_args.environment](run_args)
+    agent = simulate_cli.SCHEDULER_FACTORIES[run_args.scheduler](run_args)
     behavior = behavior_cls(
         attendance_prob=1.0,
         lazy_good_bias=0.0,
@@ -441,8 +445,8 @@ def main() -> None:
     import simulate as simulate_cli
     from simulator import simulate as run_simulation
     from simulator.behavior import StochasticBehavior
-    from simulator.cost import StatefulCostModel
     from simulator.core import new_first_priority, review_first_priority
+    from simulator.cost import StatefulCostModel
 
     user_id = args.user_id or 1
     log_dir = args.log_dir or (

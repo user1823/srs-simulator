@@ -59,7 +59,7 @@ def fsrs6_stability_short_term(p: FSRS6Params, s: float, rating: int) -> float:
     sinc = math.exp(p.weights[17] * (rating - 3 + p.weights[18])) * (
         s ** (-p.weights[19])
     )
-    return s * (max(1.0, sinc) if rating >= 3 else sinc)
+    return s * (max(1.0, sinc) if rating >= 2 else sinc)
 
 
 def fsrs6_stability_after_success(

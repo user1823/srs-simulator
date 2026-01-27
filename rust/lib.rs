@@ -82,16 +82,53 @@ impl Lib {
         println!("hello world");
         Ok("hello world".to_string())
     }
-    fn init(&self, rating: i32) -> PyResult<(f32, (f32, f32))> {
+    fn init_single(&self, rating: i32) -> PyResult<(f32, (f32, f32))> {
         let state = self.fsrs.first_review(rating);
         let interval = self.fsrs.get_interval(&state, 0.9);
         Ok((interval, state.to_tuple()))
     }
-    fn schedule(&self, s: f32, d: f32, rating: i32, elapsed: f32) -> PyResult<(f32, (f32, f32))> {
+    fn schedule_single(&self, s: f32, d: f32, rating: i32, elapsed: f32) -> PyResult<(f32, (f32, f32))> {
         let state = FSRSv6State { s: s, d: d };
         let state = self.fsrs.transition(&state, rating, elapsed);
-        let interval = self.fsrs.get_interval(&state, 0.9);
+        let interval = self.fsrs.get_interval(&state, self.adr_model.get_dr(state.s, state.d));
         Ok((interval, state.to_tuple()))
+    }
+    fn init_state(&self, ratings: Vec<i32>) -> PyResult<(Vec<f32>, Vec<f32>, Vec<f32>)> {
+        let mut intervals = Vec::with_capacity(ratings.len());
+        let mut ss = Vec::with_capacity(ratings.len());
+        let mut ds = Vec::with_capacity(ratings.len());
+
+        for rating in ratings {
+            let state = self.fsrs.first_review(rating);
+            let interval = self.fsrs.get_interval(&state, self.adr_model.get_dr(state.s, state.d));
+            intervals.push(interval);
+            ss.push(state.s);
+            ds.push(state.d);
+        }
+
+        Ok((intervals, ss, ds))
+    }
+    fn review(&self, s: Vec<f32>, d: Vec<f32>, ratings: Vec<i32>, elapsed: Vec<f32>) -> PyResult<(Vec<f32>, Vec<f32>, Vec<f32>)> {
+        let n = s.len();
+        debug_assert!(d.len() == n && ratings.len() == n);
+
+        let mut intervals = Vec::with_capacity(n);
+        let mut ss = Vec::with_capacity(n);
+        let mut ds = Vec::with_capacity(n);
+
+        for i in 0..n {
+            let state = FSRSv6State { s: s[i], d: d[i] };
+            let state = self.fsrs.transition(&state, ratings[i], elapsed[i]);
+            let interval = self
+                .fsrs
+                .get_interval(&state, self.adr_model.get_dr(state.s, state.d));
+
+            intervals.push(interval);
+            ss.push(state.s);
+            ds.push(state.d);
+        }
+
+        Ok((intervals, ss, ds))
     }
 }
 

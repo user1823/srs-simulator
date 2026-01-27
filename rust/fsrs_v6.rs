@@ -94,7 +94,7 @@ impl FSRSv6 {
     fn stability_short_term(&self, s: f32, rating: i32) -> f32 {
         let sinc = (self.w[17] * (rating as f32 - 3.0 + self.w[18])).exp()
             * s.powf(-self.w[19]);
-        if rating >= 3 { // TODO 2?
+        if rating >= 2 {
             s * f32::max(1.0, sinc)
         } else {
             s * sinc
