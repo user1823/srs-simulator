@@ -11,13 +11,50 @@ import torch
 if TYPE_CHECKING:
     import torch
 
-
 class FSRS6ADRScheduler(Scheduler):
+    _lib_cache = {}
 
-    def __init__(self, weights: Sequence[float], dr_equivalent, days, deck_size, new_cards_per_day, initial_rating_prob, initial_cost, review_rating_prob_given_success, review_cost) -> None:
-        self.lib = srs_simulator_rs.Lib(weights, dr_equivalent, days, max(1, deck_size), max(1, new_cards_per_day), initial_rating_prob, initial_cost, review_rating_prob_given_success, review_cost)
-        exit(2)
-        pass
+    def __init__(
+        self,
+        weights,
+        dr_equivalent,
+        days,
+        deck_size,
+        new_cards_per_day,
+        initial_rating_prob,
+        initial_cost,
+        review_rating_prob_given_success,
+        review_cost,
+    ) -> None:
+        key = (
+            tuple(weights),
+            dr_equivalent,
+            days,
+            max(1, deck_size),
+            max(1, new_cards_per_day),
+            tuple(initial_rating_prob),
+            tuple(initial_cost),
+            tuple(review_rating_prob_given_success),
+            tuple(review_cost),
+        )
+
+        lib = self._lib_cache.get(key)
+        if lib is None:
+            lib = srs_simulator_rs.Lib(
+                weights,
+                dr_equivalent,
+                days,
+                max(1, deck_size),
+                max(1, new_cards_per_day),
+                initial_rating_prob,
+                initial_cost,
+                review_rating_prob_given_success,
+                review_cost,
+            )
+            self._lib_cache[key] = lib
+
+        self.lib = lib
+        exit()
 
     def init_card(self, card_view: CardView, rating: int, day: float):
         ret = self.lib.init_single(rating)
