@@ -193,12 +193,12 @@ impl FSRSADRGenerator {
     pub fn suggest<T: Rng>(&mut self, adr_model: &FSRSADR, rng: &mut T) -> FSRSADR {
         let mut adr_clone = adr_model.clone();
         let choice: u32 = rng.random_range(0..100);
-        if adr_clone.decision_bonuses.is_empty() || (choice < 0 && adr_model.decision_bonuses.len() < adr_model.decision_bonuses.capacity()) {
-            Self::add_decision_bonus(&mut adr_clone, rng);
-        } else if choice < 0 {
-            Self::adjust_decision_bonus(&mut adr_clone, rng);
-        } else if choice < 50 {
+        if choice < 10 {
             Self::adjust_flat(&mut adr_clone, rng);
+        } else if adr_clone.decision_bonuses.is_empty() || (choice < 40 && adr_model.decision_bonuses.len() < adr_model.decision_bonuses.capacity()) {
+            Self::add_decision_bonus(&mut adr_clone, rng);
+        } else if choice < 400 {
+            Self::adjust_decision_bonus(&mut adr_clone, rng);
         } else if (choice < 60 || adr_model.gaussians.is_empty()) && adr_model.gaussians.len() < adr_model.gaussians.capacity() {
             Self::add_gaussian(&mut adr_clone, rng);
         } else if choice <= 70 && !adr_model.gaussians.is_empty() {

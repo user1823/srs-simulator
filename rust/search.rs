@@ -66,12 +66,13 @@ fn simulate_review_card<T: Rng>(
         let review_day_proportion = get_proportion(review_day, limit_t, end_t);
         if !split {
             // Early return of random simulations
-            if can_prune && monte_carlo_len > monte_carlo_prune_len {
-                let memorized_vol_per_day = monte_carlo_memorized / (t - monte_carlo_start_t);
-                let cost_per_day = monte_carlo_cost / (t - monte_carlo_start_t);
+            let monte_carlo_elapsed_t = t - monte_carlo_start_t;
+            if can_prune && monte_carlo_len > monte_carlo_prune_len && monte_carlo_start_t + 2.0 * monte_carlo_elapsed_t < end_t {
+                let memorized_vol_per_day = monte_carlo_memorized / monte_carlo_elapsed_t;
+                let cost_per_day = monte_carlo_cost / monte_carlo_elapsed_t;
                 let remaining_day_volume = {
-                    let rect = f32::min(limit_t, t) - t;
-                    let triangle = 0.5 * (end_t - f32::max(limit_t, t));
+                    let rect = (limit_t - t).max(0.0);
+                    let triangle = 0.5 * get_proportion(t, limit_t, end_t) * (end_t - f32::max(limit_t, t));
                     rect + triangle
                 };
                 let est_memorized = weight * memorized_vol_per_day * remaining_day_volume;
@@ -117,6 +118,7 @@ fn simulate_review_card<T: Rng>(
             monte_carlo_start_t = t;
             split = false;
             can_prune = rng.random_bool(0.99);
+            monte_carlo_prune_len = rng.random_range(32..64);
         }
         let probs = behavior_model.review_rating_prob_dist(r);
         let (cont_rating_idx, cont_prob) = 
@@ -137,7 +139,6 @@ fn simulate_review_card<T: Rng>(
             monte_carlo_len += 1;
             monte_carlo_memorized += predictor.forgetting_curve_volume(&state, time_existing_in_memory);
             monte_carlo_cost += behavior_model.review_cost(cont_rating_idx);
-            monte_carlo_prune_len = rng.random_range(16..48);
         }
         if split {
             for i in 0..probs.len() as i32 {
@@ -225,23 +226,23 @@ pub fn simulated_annealing(
     let mut rng = rand::rng();
     let baseline_adr = FSRSADR::fixed_dr(dr_equivalent);
     let mut best_adr = baseline_adr.clone();
-    let baseline_result = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
+    let baseline_result = simulate(30000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
     let baseline_memorized = baseline_result.memorized() as f32;
     let mut best_score = baseline_result.efficiency_confidence() as f32;
     let mut best_result = baseline_result.clone();
     let mut cur_adr = best_adr.clone();
     let mut cur_score = best_score;
     let mut cur_result = baseline_result.clone();
-    let temp_initial: f32 = 2.0;
-    let temp_final: f32 = 0.006;
-    let target_iters_initial: f32 = 5000.0;
-    let target_iters_final: f32 = 300000.0;
+    let temp_initial: f32 = 0.1;
+    let temp_final: f32 = 0.004;
+    let target_iters_initial: f32 = 10000.0;
+    let target_iters_final: f32 = 600000.0;
     let mut fail_counter = 0;
     let initial_fail_counter_target = 4;
     let mut fail_counter_target = initial_fail_counter_target;
     let mut simulate_weight = 10.0;
     // return best_adr;
-    let n_iterations = 3000;
+    let n_iterations = 2000;
     for it in 0..n_iterations {
         let it_ratio = it as f32 / n_iterations as f32;
         let sample = generator.suggest(&cur_adr, &mut rng);
@@ -287,7 +288,7 @@ pub fn simulated_annealing(
                 cur_score = cur_result.efficiency_confidence() as f32 - get_memorized_penalty(&cur_result, it_ratio, baseline_memorized);
                 fail_counter = 0;
                 fail_counter_target = 2 * fail_counter_target;
-                println!("Rerolling... {:.3} -> {:.3}", prev_score, cur_score);
+                println!("Rerolling... {:.3} -> {:.3}, {:.3}", prev_score, cur_result.efficiency_confidence(), cur_score);
             }
         }
     }
@@ -296,7 +297,7 @@ pub fn simulated_annealing(
 
     println!("Initial score: {}, Final score: {}, Baseline memorized: {}, Final memorized: {}", baseline_result.efficiency(), best_result.efficiency(), baseline_result.memorized(), best_result.memorized());
     // let verify = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
-    let verify = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
+    let verify = simulate(30000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
     println!("Best score repeated: efficiency: {:.3} memorized: {:.3}", verify.efficiency(), verify.memorized());
     println!("Best adr: {:?}", best_adr);
     if baseline_result.efficiency() > verify.efficiency() {

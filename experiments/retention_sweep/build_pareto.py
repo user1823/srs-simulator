@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, TypeAlias
-import math
-import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -509,8 +509,9 @@ def _plot_compare_frontier(
     title_base: str = "Pareto frontier comparison",
     show_labels: bool = False,
 ) -> None:
-    import matplotlib.pyplot as plt
     from collections.abc import Callable
+
+    import matplotlib.pyplot as plt
 
     adjust_text: Callable[..., Any] | None = None
     if show_labels:
@@ -715,6 +716,7 @@ def _plot_compare_frontier(
         import contextlib
         import io
         import logging
+
         from matplotlib.patches import FancyArrowPatch
 
         if adjust_text is None:
@@ -1069,6 +1071,13 @@ def main() -> None:
     plot_dir.mkdir(parents=True, exist_ok=True)
     _setup_plot_style()
     plot_name = _with_user_tag("Pareto frontier.png", args.user_id)
+    use_compare = run_sspmmc or len(series) != 1
+    output_name = (
+        f"Pareto frontier env compare {args.env}.png"
+        if use_compare
+        else "Pareto frontier.png"
+    )
+    title_base = "Pareto frontier comparison" if use_compare else "Pareto frontier"
     _plot_compare_frontier(
         series,
         plot_dir / plot_name,

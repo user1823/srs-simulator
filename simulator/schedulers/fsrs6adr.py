@@ -38,6 +38,10 @@ class FSRS6ADRScheduler(Scheduler):
             tuple(review_cost),
         )
 
+        def normalize(arr):
+            tot = sum(arr)
+            return [x / tot for x in arr]
+
         lib = self._lib_cache.get(key)
         if lib is None:
             lib = srs_simulator_rs.Lib(
@@ -46,9 +50,9 @@ class FSRS6ADRScheduler(Scheduler):
                 days,
                 max(1, deck_size),
                 max(1, new_cards_per_day),
-                initial_rating_prob,
+                normalize(initial_rating_prob),
                 initial_cost,
-                review_rating_prob_given_success,
+                normalize(review_rating_prob_given_success),
                 review_cost,
             )
             self._lib_cache[key] = lib
