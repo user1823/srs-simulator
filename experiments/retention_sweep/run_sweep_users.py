@@ -3,9 +3,9 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
 import time
 from pathlib import Path
-import threading
 
 from tqdm import tqdm
 
@@ -13,29 +13,28 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from simulator.fanout import FanoutJob, create_fanout_bars, run_fanout
-from simulator.subprocess_runner import run_command_with_progress
-from simulator.scheduler_spec import (
-    parse_scheduler_spec,
-    scheduler_uses_desired_retention,
+from experiments.retention_sweep.cli_utils import (
+    add_user_range_args,
+    build_retention_command,
+    has_flag,
+    parse_csv,
 )
+from simulator.fanout import FanoutJob, create_fanout_bars, run_fanout
 from simulator.retention_sweep.grid import count_dr_steps
 from simulator.retention_sweep.overrides import (
     RunSweepOverrides,
     parse_run_sweep_overrides,
 )
 from simulator.retention_sweep.sspmmc import resolve_sspmmc_policy_paths
+from simulator.scheduler_spec import (
+    parse_scheduler_spec,
+    scheduler_uses_desired_retention,
+)
+from simulator.subprocess_runner import run_command_with_progress
 from simulator.sweep_utils import (
     parse_cuda_devices,
     parse_env_overrides,
     strip_arg_terminator,
-)
-
-from experiments.retention_sweep.cli_utils import (
-    add_user_range_args,
-    build_retention_command,
-    has_flag,
-    parse_csv,
 )
 
 
@@ -55,8 +54,18 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     )
     add_user_range_args(parser)
     parser.add_argument(
-        "--env",
-        dest="env",
+        "--step-user",
+        type=int,
+        default=1,
+        help="Step size for user ids.",
+    )
+    parser.add_argument("--start", type=int, default=70, help="Start retention x100.")
+    parser.add_argument("--end", type=int, default=99, help="End retention x100.")
+    parser.add_argument(
+        "--step", type=int, default=1, help="Step size for retention x100."
+    )
+    parser.add_argument(
+        "--environments",
         default="lstm",
         help="Comma-separated environments passed to run_sweep.py.",
     )
@@ -268,6 +277,36 @@ def main() -> int:
     enable_child_summary = args.child_summary == "on" or (
         args.child_summary == "auto" and args.max_parallel == 1
     )
+    failures = 0
+    for user_id in range(args.start_user, args.end_user + 1, args.step_user):
+        cmd = [
+            args.uv_cmd,
+            "run",
+            ".\\experiments\\retention_sweep\\run_sweep.py",
+            "--environments",
+            args.environments,
+            "--schedulers",
+            args.schedulers,
+            "--user-id",
+            str(user_id),
+            "--start",
+            str(args.start),
+            "--end",
+            str(args.end),
+            "--step",
+            str(args.step),
+        ]
+        cmd.extend(extra_args)
+        print(f"[{user_id}] {' '.join(cmd)}")
+        if not args.dry_run:
+            result = subprocess.run(cmd, check=False)
+            if result.returncode != 0:
+                failures += 1
+                print(f"[{user_id}] FAILED with exit code {result.returncode}")
+                if args.fail_fast:
+                    return result.returncode
+        if args.sleep_seconds > 0:
+            time.sleep(args.sleep_seconds)
 
     env = os.environ.copy()
     env_overrides = parse_env_overrides(args.set_env)

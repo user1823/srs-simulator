@@ -54,7 +54,6 @@ class FSRS6ADRScheduler(Scheduler):
             self._lib_cache[key] = lib
 
         self.lib = lib
-        exit()
 
     def init_card(self, card_view: CardView, rating: int, day: float):
         ret = self.lib.init_single(rating)
