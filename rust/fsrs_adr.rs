@@ -53,10 +53,11 @@ impl DecisionPlane {
     }
 }
 
+const PLANE_CAP: usize = 1;
 #[derive(Clone, Debug)]
 struct RegionBonus {
     bonus: f32,
-    decision_planes: ArrayVec<DecisionPlane, 3>
+    decision_planes: ArrayVec<DecisionPlane, PLANE_CAP>
 }
 
 impl RegionBonus {
@@ -70,7 +71,7 @@ impl RegionBonus {
     }
     fn gen<T: Rng>(rng: &mut T) -> Self {
         let bonus = rng.random_range(-0.2..0.2);
-        let n_planes = rng.random_range(1..=3);
+        let n_planes = rng.random_range(1..=PLANE_CAP);
         let mut decision_planes = ArrayVec::new();
         for _ in 0..n_planes {
             decision_planes.push(DecisionPlane::gen(rng));
@@ -85,20 +86,14 @@ impl RegionBonus {
 
         if r < 30 {
             self.bonus = (self.bonus + rng.random_range(-0.2..0.2)).clamp(-3.0, 3.0);
-        } else if r < 70 {
+        } else if r < 40 && self.decision_planes.len() < self.decision_planes.capacity() {
+            self.decision_planes.push(DecisionPlane::gen(rng));
+        } else if r < 50 && self.decision_planes.len() > 1 {
+            let i = rng.random_range(0..self.decision_planes.len());
+            self.decision_planes.swap_remove(i);
+        } else {
             let i = rng.random_range(0..self.decision_planes.len());
             self.decision_planes[i].mutate(rng);
-        } else {
-            if rng.random_bool(0.5) {
-                if self.decision_planes.len() < self.decision_planes.capacity() {
-                    self.decision_planes.push(DecisionPlane::gen(rng));
-                }
-            } else {
-                if self.decision_planes.len() > 1 {
-                    let i = rng.random_range(0..self.decision_planes.len());
-                    self.decision_planes.swap_remove(i);
-                }
-            }
         }
     }
 }
@@ -151,7 +146,7 @@ impl Gaussian {
 pub struct FSRSADR {
     flat: f32,
     gaussians: ArrayVec<Gaussian, 8>,
-    decision_bonuses: ArrayVec<RegionBonus, 8>,
+    decision_bonuses: ArrayVec<RegionBonus, 1>,
 }
 impl FSRSADR {
     pub fn new(dr: f32) -> Self {
@@ -195,7 +190,9 @@ impl FSRSADRGenerator {
         let choice: u32 = rng.random_range(0..100);
         if choice < 10 {
             Self::adjust_flat(&mut adr_clone, rng);
-        } else if adr_clone.decision_bonuses.is_empty() || (choice < 40 && adr_model.decision_bonuses.len() < adr_model.decision_bonuses.capacity()) {
+        } else if !adr_clone.decision_bonuses.is_empty() && choice < 20 {
+            Self::delete_decision_bonus(&mut adr_clone, rng);
+        } else if adr_clone.decision_bonuses.is_empty() || (choice < 30 && adr_model.decision_bonuses.len() < adr_model.decision_bonuses.capacity()) {
             Self::add_decision_bonus(&mut adr_clone, rng);
         } else if choice < 400 {
             Self::adjust_decision_bonus(&mut adr_clone, rng);
@@ -296,6 +293,10 @@ impl FSRSADRGenerator {
         let rand_index = rng.random_range(0..adr_model.decision_bonuses.len());
         let decision_bonus = unsafe { adr_model.decision_bonuses.get_unchecked_mut(rand_index) };
         decision_bonus.mutate(rng);
+    }
+    fn delete_decision_bonus<T: Rng>(adr_model: &mut FSRSADR, rng: &mut T) -> () {
+        let idx = rng.random_range(0..adr_model.decision_bonuses.len());
+        adr_model.decision_bonuses.swap_remove(idx);
     }
     pub fn record_score(&self, score: f64) -> () {
 

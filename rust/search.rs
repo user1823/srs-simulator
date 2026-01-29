@@ -1,4 +1,5 @@
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 
 use crate::{behavior_model::BehaviorModel, fsrs_adr::FSRSADRGenerator, fsrs_v6::{FSRSv6, FSRSv6State}};
 use crate::{fsrs_adr::FSRSADR};
@@ -223,7 +224,7 @@ pub fn simulated_annealing(
     behavior_model: &BehaviorModel,
 ) -> FSRSADR {
     let mut generator = FSRSADRGenerator::new();
-    let mut rng = rand::rng();
+    let mut rng = ChaCha8Rng::seed_from_u64(1234);
     let baseline_adr = FSRSADR::fixed_dr(dr_equivalent);
     let mut best_adr = baseline_adr.clone();
     let baseline_result = simulate(30000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
@@ -262,25 +263,25 @@ pub fn simulated_annealing(
 
         let memorized_penalty = get_memorized_penalty(&result, it_ratio, baseline_memorized);
         let temp = temp_initial * (temp_final / temp_initial).powf(it_ratio);
-        println!("it: {}, temp: {:.3}, memorized: {:.3}, eff: {:.3}, eff_conf: {:.3}, iters: {} weight: {:.1}, eff_conf_penalty: {:.3}, memorized penalty: {:.3}", it, temp, result.memorized(), result.efficiency(), result.efficiency_confidence(), result.total_iters, simulate_weight, -result.efficiency_confidence() + result.efficiency(), memorized_penalty);
+        // println!("it: {}, temp: {:.3}, memorized: {:.3}, eff: {:.3}, eff_conf: {:.3}, iters: {} weight: {:.1}, eff_conf_penalty: {:.3}, memorized penalty: {:.3}", it, temp, result.memorized(), result.efficiency(), result.efficiency_confidence(), result.total_iters, simulate_weight, -result.efficiency_confidence() + result.efficiency(), memorized_penalty);
         let score = result.efficiency_confidence() as f32 - memorized_penalty;
 
         if score > cur_score {
-            println!("Local best.");
+            // println!("Local best.");
             cur_score = score;
             cur_adr = sample;
             cur_result = result;
             fail_counter = 0;
             fail_counter_target = initial_fail_counter_target;
         } else if temp_choice < ((score - cur_score) / temp).exp() {
-            println!("Temp transition {:.3} {:.3} {:.3}", score, cur_score, temp);
+            // println!("Temp transition {:.3} {:.3} {:.3}", score, cur_score, temp);
             cur_score = score;
             cur_adr = sample;
             cur_result = result;
             fail_counter = 0;
             fail_counter_target = initial_fail_counter_target;
         } else {
-            println!("Do nothing.");
+            // println!("Do nothing.");
             fail_counter += 1;
             if fail_counter == fail_counter_target {
                 let prev_score = cur_score;
@@ -288,7 +289,7 @@ pub fn simulated_annealing(
                 cur_score = cur_result.efficiency_confidence() as f32 - get_memorized_penalty(&cur_result, it_ratio, baseline_memorized);
                 fail_counter = 0;
                 fail_counter_target = 2 * fail_counter_target;
-                println!("Rerolling... {:.3} -> {:.3}, {:.3}", prev_score, cur_result.efficiency_confidence(), cur_score);
+                // println!("Rerolling... {:.3} -> {:.3}, {:.3}", prev_score, cur_result.efficiency_confidence(), cur_score);
             }
         }
     }
@@ -296,7 +297,6 @@ pub fn simulated_annealing(
     best_adr = cur_adr;
 
     println!("Initial score: {}, Final score: {}, Baseline memorized: {}, Final memorized: {}", baseline_result.efficiency(), best_result.efficiency(), baseline_result.memorized(), best_result.memorized());
-    // let verify = simulate(10000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
     let verify = simulate(30000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
     println!("Best score repeated: efficiency: {:.3} memorized: {:.3}", verify.efficiency(), verify.memorized());
     println!("Best adr: {:?}", best_adr);
