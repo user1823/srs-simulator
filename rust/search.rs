@@ -227,6 +227,7 @@ pub fn simulated_annealing(
     let mut rng = ChaCha8Rng::seed_from_u64(1234);
     let baseline_adr = FSRSADR::fixed_dr(dr_equivalent);
     let mut best_adr = baseline_adr.clone();
+    // return best_adr;
     let baseline_result = simulate(30000.0, deck_size, new_cards_per_day, days as f32, &predictor, &best_adr, &behavior_model, &mut rng);
     let baseline_memorized = baseline_result.memorized() as f32;
     let mut best_score = baseline_result.efficiency_confidence() as f32;
@@ -242,7 +243,6 @@ pub fn simulated_annealing(
     let initial_fail_counter_target = 4;
     let mut fail_counter_target = initial_fail_counter_target;
     let mut simulate_weight = 10.0;
-    // return best_adr;
     let n_iterations = 2000;
     for it in 0..n_iterations {
         let it_ratio = it as f32 / n_iterations as f32;

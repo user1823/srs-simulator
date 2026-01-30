@@ -145,6 +145,8 @@ impl Gaussian {
 #[derive(Clone, Debug)]
 pub struct FSRSADR {
     flat: f32,
+    s_multi: f32,
+    d_multi: f32,
     gaussians: ArrayVec<Gaussian, 8>,
     decision_bonuses: ArrayVec<RegionBonus, 1>,
 }
@@ -153,12 +155,14 @@ impl FSRSADR {
         Self::fixed_dr(dr)
     }
     pub fn fixed_dr(dr: f32) -> Self {
-        Self { flat: inverse_sigmoid(dr), gaussians: ArrayVec::new(), decision_bonuses: ArrayVec::new() }
+        Self { flat: inverse_sigmoid(dr), s_multi: 0.0, d_multi: 0.0, gaussians: ArrayVec::new(), decision_bonuses: ArrayVec::new() }
     }
     pub fn get_dr(&self, s: f32, d: f32) -> f32 {
         let s = s.ln();
         let logit = 
             self.flat 
+            + self.s_multi * s
+            + self.d_multi * d
             + self.gaussians.iter().map(|g| g.eval(s, d)).sum::<f32>()
             + self.decision_bonuses.iter().map(|g| g.eval(s, d)).sum::<f32>();
         sigmoid(logit).clamp(0.0, 0.995)
@@ -188,8 +192,16 @@ impl FSRSADRGenerator {
     pub fn suggest<T: Rng>(&mut self, adr_model: &FSRSADR, rng: &mut T) -> FSRSADR {
         let mut adr_clone = adr_model.clone();
         let choice: u32 = rng.random_range(0..100);
-        if choice < 10 {
+        if choice < 30 {
             Self::adjust_flat(&mut adr_clone, rng);
+        } else if choice < 35 {
+            adr_clone.s_multi = 0.0;
+        } else if choice < 70 {
+            adr_clone.s_multi += rng.random_range(-0.03..0.03);
+        } else if choice < 75 {
+            adr_clone.d_multi = 0.0;
+        } else if choice < 500 {
+            adr_clone.d_multi += rng.random_range(-0.03..0.03);
         } else if !adr_clone.decision_bonuses.is_empty() && choice < 20 {
             Self::delete_decision_bonus(&mut adr_clone, rng);
         } else if adr_clone.decision_bonuses.is_empty() || (choice < 30 && adr_model.decision_bonuses.len() < adr_model.decision_bonuses.capacity()) {
