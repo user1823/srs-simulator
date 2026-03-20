@@ -51,6 +51,7 @@ from simulator.schedulers import (
     LSTMScheduler,
     MemriseScheduler,
     SSPMMCScheduler,
+    TestADRScheduler,
 )
 from simulator.short_term import ShortTermScheduler
 from simulator.short_term_config import (
@@ -171,6 +172,10 @@ SCHEDULER_FACTORIES = {
         initial_cost=args.usage["learn_costs"],
         review_rating_prob_given_success=args.usage["review_rating_prob"],
         review_cost=args.usage["review_costs"],
+    ),
+    "test-adr": lambda args: TestADRScheduler(
+        weights=_resolve_benchmark_weights(args, "fsrs6", expected_len=21),
+        priority_mode=args.scheduler_priority,
     ),
 }
 
