@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import math
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 from simulator.core import CardView
-from simulator.schedulers.fsrs import FSRS6Scheduler
+from simulator.schedulers.fsrs import FSRS6Scheduler, FSRS6VectorizedSchedulerOps
 from simulator.math.fsrs import (
     fsrs6_forgetting_curve,
     fsrs6_init_state,
@@ -17,15 +17,29 @@ from simulator.math.fsrs import (
     _clamp_s,
 )
 
+if TYPE_CHECKING:
+    import torch
+
 # ---------------- ADR parameters ----------------
 ADR_FLAT = 2.15
 ADR_S_MULTI = 0.135
 ADR_D_MULTI = -0.085
 
+MAX_TARGET_DR = 0.995
 
-def _sigmoid(x: float) -> float:
-    x = max(-10.0, min(10.0, float(x)))
-    return 1.0 / (1.0 + math.exp(-x))
+
+def adr_target_dr(s: float, d: float) -> float:
+    """Compute the ADR target retrieval rate from stability and difficulty.
+
+    Implements:
+        logit = ADR_FLAT + ADR_S_MULTI * ln(s) + ADR_D_MULTI * d
+        DR    = clip(sigmoid(logit), 0, MAX_TARGET_DR)
+
+    s must be positive; caller is responsible for clamping to s_min first.
+    """
+    logit = ADR_FLAT + ADR_S_MULTI * math.log(max(s, 1e-12)) + ADR_D_MULTI * d
+    logit = max(-10.0, min(10.0, logit))
+    return min(1.0 / (1.0 + math.exp(-logit)), MAX_TARGET_DR)
 
 
 class TestADRScheduler(FSRS6Scheduler):
@@ -53,9 +67,7 @@ class TestADRScheduler(FSRS6Scheduler):
         )
 
     def _target_dr(self, s: float, d: float) -> float:
-        s = max(self.params.bounds.s_min, float(s))
-        logit = ADR_FLAT + ADR_S_MULTI * math.log(s) + ADR_D_MULTI * float(d)
-        return min(0.995, _sigmoid(logit))
+        return adr_target_dr(max(self.params.bounds.s_min, float(s)), float(d))
 
     def init_card(self, card_view: CardView, rating: int, day: float):
         s, d = fsrs6_init_state(self.params, rating)
@@ -99,3 +111,51 @@ class TestADRScheduler(FSRS6Scheduler):
         dr = self._target_dr(state["s"], state["d"])
         interval = fsrs6_next_interval(self.params, state["s"], dr)
         return interval, state
+
+
+class TestADRVectorizedSchedulerOps(FSRS6VectorizedSchedulerOps):
+    """
+    Vectorized ops for TestADRScheduler.
+
+    The parent class handles all state updates (s, d); we only replace the
+    final interval calculation with a torch port of adr_target_dr:
+
+        logit = ADR_FLAT + ADR_S_MULTI * ln(s) + ADR_D_MULTI * d
+        dr    = clip(sigmoid(logit), 0, MAX_TARGET_DR)
+        ivl   = max(1, s / factor * (dr^(1/decay) - 1))
+    """
+
+    def _adr_interval(
+        self, s: "torch.Tensor", d: "torch.Tensor"
+    ) -> "torch.Tensor":
+        logit = ADR_FLAT + ADR_S_MULTI * s.clamp(min=1e-12).log() + ADR_D_MULTI * d
+        xc = logit.clamp(-10.0, 10.0)
+        dr = (1.0 / (1.0 + self._torch.exp(-xc))).clamp(max=MAX_TARGET_DR)
+        retention_factor = dr.pow(1.0 / self._decay) - 1.0
+        return (s / self._factor * retention_factor).clamp(min=1.0)
+
+    def update_review(
+        self,
+        state,
+        idx: "torch.Tensor",
+        elapsed: "torch.Tensor",
+        rating: "torch.Tensor",
+        prev_interval: "torch.Tensor",
+    ) -> "torch.Tensor":
+        # Let the parent update state.s[idx] and state.d[idx] in place.
+        super().update_review(state, idx, elapsed, rating, prev_interval)
+        if idx.numel() == 0:
+            return self._torch.zeros(0, device=self.device, dtype=self.dtype)
+        return self._adr_interval(state.s[idx], state.d[idx])
+
+    def update_learn(
+        self,
+        state,
+        idx: "torch.Tensor",
+        rating: "torch.Tensor",
+    ) -> "torch.Tensor":
+        # Let the parent update state.s[idx] and state.d[idx] in place.
+        super().update_learn(state, idx, rating)
+        if idx.numel() == 0:
+            return self._torch.zeros(0, device=self.device, dtype=self.dtype)
+        return self._adr_interval(state.s[idx], state.d[idx])

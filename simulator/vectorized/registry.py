@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from simulator.schedulers.fsrs6adr import FSRS6ADRScheduler, FSRS6ADRVectorizedSchedulerOps
+from simulator.schedulers.test_adr import TestADRScheduler, TestADRVectorizedSchedulerOps
 import torch
 
 from simulator.models import FSRS6Model, LSTMModel
@@ -60,6 +61,8 @@ def resolve_scheduler_ops(
     device: torch.device,
     dtype: torch.dtype,
 ) -> VectorizedSchedulerOps:
+    if isinstance(scheduler, TestADRScheduler):
+        return TestADRVectorizedSchedulerOps(scheduler, device=device, dtype=dtype)
     if isinstance(scheduler, FSRS6Scheduler):
         return FSRS6VectorizedSchedulerOps(scheduler, device=device, dtype=dtype)
     if isinstance(scheduler, FSRS3Scheduler):
