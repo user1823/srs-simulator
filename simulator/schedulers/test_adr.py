@@ -4,8 +4,9 @@ import math
 from typing import TYPE_CHECKING, Sequence
 
 from simulator.core import CardView
-from simulator.schedulers.fsrs import FSRS6Scheduler, FSRS6VectorizedSchedulerOps
 from simulator.math.fsrs import (
+    _clamp_d,
+    _clamp_s,
     fsrs6_forgetting_curve,
     fsrs6_init_state,
     fsrs6_next_d,
@@ -13,9 +14,8 @@ from simulator.math.fsrs import (
     fsrs6_stability_after_failure,
     fsrs6_stability_after_success,
     fsrs6_stability_short_term,
-    _clamp_d,
-    _clamp_s,
 )
+from simulator.schedulers.fsrs import FSRS6Scheduler, FSRS6VectorizedSchedulerOps
 
 if TYPE_CHECKING:
     import torch
@@ -25,7 +25,7 @@ ADR_FLAT = 2.15
 ADR_S_MULTI = 0.135
 ADR_D_MULTI = -0.085
 
-MAX_TARGET_DR = 0.995
+MAX_TARGET_DR = 0.94
 
 
 def adr_target_dr(s: float, d: float) -> float:
@@ -125,9 +125,7 @@ class TestADRVectorizedSchedulerOps(FSRS6VectorizedSchedulerOps):
         ivl   = max(1, s / factor * (dr^(1/decay) - 1))
     """
 
-    def _adr_interval(
-        self, s: "torch.Tensor", d: "torch.Tensor"
-    ) -> "torch.Tensor":
+    def _adr_interval(self, s: "torch.Tensor", d: "torch.Tensor") -> "torch.Tensor":
         logit = ADR_FLAT + ADR_S_MULTI * s.clamp(min=1e-12).log() + ADR_D_MULTI * d
         xc = logit.clamp(-10.0, 10.0)
         dr = (1.0 / (1.0 + self._torch.exp(-xc))).clamp(max=MAX_TARGET_DR)
