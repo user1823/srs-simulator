@@ -26,6 +26,7 @@ ADR_S_MULTI = 0.135
 ADR_D_MULTI = -0.085
 
 MAX_TARGET_DR = 0.94
+MIN_TARGET_DR = 0.82
 
 
 def adr_target_dr(s: float, d: float) -> float:
@@ -33,13 +34,14 @@ def adr_target_dr(s: float, d: float) -> float:
 
     Implements:
         logit = ADR_FLAT + ADR_S_MULTI * ln(s) + ADR_D_MULTI * d
-        DR    = clip(sigmoid(logit), 0, MAX_TARGET_DR)
+        DR    = clip(sigmoid(logit), MIN_TARGET_DR, MAX_TARGET_DR)
 
     s must be positive; caller is responsible for clamping to s_min first.
     """
     logit = ADR_FLAT + ADR_S_MULTI * math.log(max(s, 1e-12)) + ADR_D_MULTI * d
     logit = max(-10.0, min(10.0, logit))
-    return min(1.0 / (1.0 + math.exp(-logit)), MAX_TARGET_DR)
+    raw = 1.0 / (1.0 + math.exp(-logit))
+    return max(MIN_TARGET_DR, min(raw, MAX_TARGET_DR))
 
 
 class TestADRScheduler(FSRS6Scheduler):
@@ -121,14 +123,16 @@ class TestADRVectorizedSchedulerOps(FSRS6VectorizedSchedulerOps):
     final interval calculation with a torch port of adr_target_dr:
 
         logit = ADR_FLAT + ADR_S_MULTI * ln(s) + ADR_D_MULTI * d
-        dr    = clip(sigmoid(logit), 0, MAX_TARGET_DR)
+        dr    = clip(sigmoid(logit), MIN_TARGET_DR, MAX_TARGET_DR)
         ivl   = max(1, s / factor * (dr^(1/decay) - 1))
     """
 
     def _adr_interval(self, s: "torch.Tensor", d: "torch.Tensor") -> "torch.Tensor":
         logit = ADR_FLAT + ADR_S_MULTI * s.clamp(min=1e-12).log() + ADR_D_MULTI * d
         xc = logit.clamp(-10.0, 10.0)
-        dr = (1.0 / (1.0 + self._torch.exp(-xc))).clamp(max=MAX_TARGET_DR)
+        dr = (1.0 / (1.0 + self._torch.exp(-xc))).clamp(
+            min=MIN_TARGET_DR, max=MAX_TARGET_DR
+        )
         retention_factor = dr.pow(1.0 / self._decay) - 1.0
         return (s / self._factor * retention_factor).clamp(min=1.0)
 
